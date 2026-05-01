@@ -1,0 +1,6 @@
+{
+  "name": "Wiki Image Chronos",
+  "description": "Visualize the evolution of a Wikipedia article's main infobox image through a historical timeline.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
