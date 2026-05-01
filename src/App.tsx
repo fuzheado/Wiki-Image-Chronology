@@ -357,7 +357,7 @@ function TimelineItem({ entry, index, isLast }: TimelineItemProps) {
               <img 
                 src={entry.thumbnailUrl} 
                 alt={entry.imageName} 
-                className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
+                className="w-full h-full object-cover transition-all duration-700"
                 referrerPolicy="no-referrer"
               />
               <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/5 transition-all" />
