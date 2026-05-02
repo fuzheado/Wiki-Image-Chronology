@@ -9,26 +9,24 @@ An application that analyzes the revision history of a Wikipedia article to iden
 - Users can search for a Wikipedia article by title.
 - Support for selecting accurate matches from search results.
 
-### 2. Historical Revision Analysis
-- Fetch revision history for a selected article (up to 3000 revisions).
-- Parse the wikitext of each revision to extract image parameters from templates (e.g., `Infobox person`, `landscape`, `photo`, `image1`).
-- Normalize and deduplicate image filenames to identify "image eras".
-- **Extraction Strategy**: Handle common aliases and cleaning steps (like removing HTML comments and template-nesting artifacts) to ensure accuracy.
+### 2. Historical Revision Analysis (Batch Retrieval Pipeline)
+- **Phase 1 (The Sweep)**: Fetch revision history (up to 500 revisions) in batches of 50 with `rvprop=content`.
+- **Phase 2 (The Matcher)**: For each revision, extract the string following the image parameter in the Infobox.
+- **Phase 3 (The Filter)**: Compare the extracted string from Revision $N$ to Revision $N-1$ to identify "Candidate Changes."
+- **Phase 4 (The Clean-up)**: If a candidate change involves a template (e.g., `{{P18|...}}`), trigger a single `action=parse` call to resolve the actual rendered image.
+- **Wikidata "Ghost" Check**: Synchronize with Wikidata's `P18` (image) property history to detect image updates that occur via Wikidata rather than direct wikitext edits.
+- **Deduplication**: Automatically collapse revisions that result in the same rendered image into a single chronological "era."
 
 ### 3. Visual Linear Timeline
-- Display a horizontal, time-accurate linear timeline.
-- Proportional spacing between entries based on actual calendar days.
+- Display a horizontal, time-accurate linear timeline with proportional spacing.
 - **Interactivity**: 
-    - **Zoom**: Scalable view (20% - 500%) to handle both short-term and multi-decade histories.
-    - **Minimap Overview**: A navigational "scrubber" at the bottom to jump to specific points in time.
-    - **Scroll Control**: Persistent custom **horizontal and vertical** scrollbars visible at all times.
-    - **Auto-fitting**: Intelligently fits the timeline to the screen on initial load.
+    - **Zoom**: Scalable view (20% - 500%).
+    - **Minimap Overview**: A navigational "scrubber" for rapid temporal navigation.
+    - **Scroll Control**: Persistent custom **horizontal and vertical** scrollbars.
 - Each entry displays:
-    - High-res thumbnail via Wikimedia Commons.
-    - Introduction date and editor attribution.
-    - Edit summary/comment.
-    - **Status Badges**: Specialized color-coding for "Reverts" (Red) and "Undos" (Orange).
-- **Current State Sidebar**: A persistent right-side panel showing the active infobox image and its duration history (e.g., "Active for 400 days").
+    - Thumbnail, attribution, and comment.
+    - **Status Badges**: Color-coded for Reverts (Red), Undos (Orange), and Wikidata (Purple).
+- **Current State Sidebar**: Displays the active infobox image and its total duration (e.g., "Active for 400 days").
 
 ### 4. Technical Stack
 - **Framework**: React 18+ with Vite.

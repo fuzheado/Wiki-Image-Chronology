@@ -9,19 +9,20 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
 ## ✨ Features
 
 - **Dynamic Search**: Search for any Wikipedia article title across the English Wikipedia database.
-- **Revision Deep-Scan**: Analyzes up to 3000 historical revisions to find significant image transitions, "revert" states, and "undo" actions.
-- **Time-Accurate Linear Timeline**: A horizontal timeline where items are spaced proportionally to the time between edits, with persistent custom scrollbars for reliable navigation.
+- **Batch Retrieval Pipeline**: 
+    - **Phase 1 (The Sweep)**: Fetches revision history in batches of 50 with full wikitext for efficient scanning.
+    - **Phase 2 (The Matcher)**: Extracts raw image parameters from Infobox templates using pre-cleaned wikitext filters.
+    - **Phase 3 (The Filter)**: Identifies candidate changes by comparing parameter strings between revisions.
+    - **Phase 4 (The Clean-up)**: Targeted use of the Wikipedia `action=parse` API specifically for complex templates (like `{{P18|...}}`) to resolve final rendered images.
+    - **Wikidata "Ghost" Detection**: Synchronously tracks `P18` property changes on Wikidata to capture updates that don't trigger Wikipedia edits.
+- **Time-Accurate Linear Timeline**: A horizontal timeline spaced proportionally by time, with persistent multi-axis scrollbars.
 - **Visual Intelligence**:
-  - Color-coded entries: Red for Reverts, **Orange for Undos**.
-  - Advanced parsing identifies image aliases (`landscape`, `image_skyline`, etc.) and handles complex wikitext nesting.
+    - Color-coded entries: Red (Reverts), Orange (Undos), Purple (Wikidata).
 - **Zoom & Navigation**: 
-  - Zoom in/out to see density or detail (20% to 500% zoom).
-  - Navigation Overview (Minimap) to pan quickly through decades of history.
+    - Zoom (20% to 500%) with a navigational minimap.
+- **Real-Time Progress Metrics**: Detailed visual feedback during the analysis pipeline (Sweeping → Wikidata) with per-phase progress bars.
 - **Data-Rich Display**:
-  - High-quality image thumbnails.
-  - Precise timestamp and timeline range indicators.
-  - "Active Since" duration for the current image (e.g., "400 days ago").
-  - Contributor attribution and revision comments.
+    - High-quality thumbnails, "Active Since" day-counters, and revision diffs.
 - **Professional Analytics UI**: A high-fidelity "technical dashboard" aesthetic with a dedicated space for the "Current Infobox Image".
 
 ## 🛠️ Tech Stack
@@ -54,7 +55,12 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
 
 ## 📖 How it Works
 
-The application uses the MediaWiki `action=query` API to fetch revision content. It employs custom parsing logic to identify common image parameters in Infobox templates (handling aliases like `image`, `photo`, `image_name`, `landscape`, `image1`, etc.). By comparing these values chronologically, the app identifies transitions. It then fetches high-resolution metadata and thumbnails from Wikimedia Commons to populate the timeline.
+The application employs a sophisticated four-stage validation pipeline:
+1. **The Sweep**: Fetching revision history in batches of 50 with content to identify candidate changes.
+2. **The Matcher**: Extracting specific image parameters from Infobox wikitext.
+3. **The Filter**: Comparing revisions to isolate meaningful transitions.
+4. **The Clean-up**: Using the Parse API only when necessary to resolve template-based images (like Wikidata pulls).
+5. **Wikidata Sync**: Injecting Wikidata property changes to catch "ghost" updates.
 
 ## 📝 License
 This project is licensed under the Apache-2.0 License.

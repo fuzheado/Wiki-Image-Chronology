@@ -8,6 +8,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<WikiPage[]>([]);
   const [selectedPage, setSelectedPage] = useState<WikiPage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState<{ phase: string; count: number; total?: number } | null>(null);
   const [history, setHistory] = useState<ImageHistoryEntry[]>([]);
   const sortedHistory = useMemo(() => {
     return [...history].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -98,12 +99,13 @@ export default function App() {
     setSearchResults([]);
     setQuery('');
     setIsLoading(true);
+    setProgress({ phase: 'Initializing', count: 0 });
     setError(null);
     setHistory([]);
 
     try {
       // 1. Get significant revisions where images changed
-      const changes = await wikipediaService.getArticleRevisions(page.title);
+      const changes = await wikipediaService.getArticleRevisions(page.title, 500, setProgress);
       
       if (changes.length === 0) {
         setError("No infobox images found in the history of this article.");
@@ -112,8 +114,10 @@ export default function App() {
       }
 
       // 2. Fetch image details (URLs) for unique image names
+      setProgress({ phase: 'Resolving image metadata', count: 0, total: changes.length });
       const uniqueNames = Array.from(new Set(changes.map(c => c.imageName)));
       const imageDetails = await wikipediaService.getImageDetails(uniqueNames);
+      setProgress({ phase: 'Finalizing', count: uniqueNames.length, total: uniqueNames.length });
 
       // 3. Combine data
       const enrichedHistory: ImageHistoryEntry[] = changes.map(change => {
@@ -228,14 +232,35 @@ export default function App() {
           )}
 
           {isLoading && (
-            <div className="flex flex-col items-center justify-center h-full space-y-6">
+            <div className="flex flex-col items-center justify-center h-full space-y-8">
               <div className="relative">
-                <div className="w-16 h-16 border-4 border-slate-100 rounded-full" />
-                <Loader2 className="absolute top-0 left-0 w-16 h-16 animate-spin text-blue-600 border-4 border-transparent border-t-blue-600 rounded-full" />
+                <div className="w-20 h-20 border-4 border-slate-100 rounded-full" />
+                <Loader2 className="absolute top-0 left-0 w-20 h-20 animate-spin text-blue-600 border-4 border-transparent border-t-blue-600 rounded-full" />
               </div>
-              <div className="text-center">
-                <p className="text-sm font-bold text-slate-900 uppercase tracking-widest">Reconstructing Eras</p>
-                <p className="text-xs text-slate-400 mt-1">Scanning Wikipedia revision database...</p>
+              <div className="text-center space-y-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Scanning History</p>
+                  <p className="text-xl font-bold text-slate-900 tracking-tight">
+                    {progress?.phase || 'Reconstructing Eras...'}
+                  </p>
+                </div>
+                
+                {progress && (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-48 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <motion.div 
+                        className="h-full bg-blue-600"
+                        initial={{ width: 0 }}
+                        animate={{ 
+                          width: progress.total ? `${(progress.count / progress.total) * 100}%` : '50%' 
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                      {progress.count} {progress.total ? `/ ${progress.total}` : ''} Records
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -354,7 +379,7 @@ export default function App() {
                       <>
                         {new Date(history[history.length - 1].timestamp).toLocaleDateString()}
                         <span className="ml-2 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                          {Math.floor((new Date().getTime() - new Date(history[history.length - 1].timestamp).getTime()) / (1000 * 60 * 60 * 24))} days ago
+                          {Math.max(0, Math.floor((new Date().getTime() - new Date(history[history.length - 1].timestamp).getTime()) / (1000 * 60 * 60 * 24)))} days
                         </span>
                       </>
                     ) : 'N/A'}
@@ -541,6 +566,13 @@ function TimelineCard({ entry, stackIndex }: TimelineCardProps) {
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
         />
+        <div className="absolute top-2 left-2 flex flex-col gap-1">
+          {entry.source === 'Wikidata' && (
+            <div className="bg-purple-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-lg flex items-center gap-1 ring-2 ring-white">
+              Wikidata
+            </div>
+          )}
+        </div>
         {isUndo ? (
           <div className="absolute top-2 right-2 bg-orange-600 text-white px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-tight shadow-lg flex items-center gap-1.5 ring-2 ring-white">
             <History className="w-3 h-3" /> UNDO
@@ -578,14 +610,18 @@ function TimelineCard({ entry, stackIndex }: TimelineCardProps) {
 
         <div className="flex gap-1.5 pt-1">
           <a 
-            href={`https://en.wikipedia.org/wiki/?diff=${entry.revid}`} 
+            href={entry.source === 'Wikidata' 
+              ? `https://www.wikidata.org/w/index.php?oldid=${entry.revid}` 
+              : `https://en.wikipedia.org/wiki/?diff=${entry.revid}`
+            } 
             target="_blank" 
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all 
               ${isUndo ? 'bg-orange-600 text-white hover:bg-orange-700 shadow-sm shadow-orange-200' : 
+                entry.source === 'Wikidata' ? 'bg-purple-600 text-white hover:bg-purple-700' :
                 isRevert ? 'bg-red-600 text-white hover:bg-red-700 shadow-sm shadow-red-200' : 
                 'bg-slate-900 text-white hover:bg-blue-600'}`}
           >
-            Diff <ArrowRight className="w-2.5 h-2.5" />
+            {entry.source === 'Wikidata' ? 'Source' : 'Diff'} <ArrowRight className="w-2.5 h-2.5" />
           </a>
           <a 
             href={entry.originalUrl} 
