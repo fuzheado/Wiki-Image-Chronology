@@ -14,6 +14,8 @@ export interface RevisionChange {
   user: string;
   comment: string;
   imageName: string;
+  isRevert?: boolean;
+  isUndo?: boolean;
 }
 
 export interface ImageHistoryEntry extends RevisionChange {
@@ -49,22 +51,19 @@ export const wikipediaService = {
     }));
   },
 
-  async getArticleRevisions(title: string, limit = 500): Promise<RevisionChange[]> {
-    // We fetch revisions in batches. 
-    // To find image changes, we need the wikitext content.
-    // NOTE: For very large articles, this might be partial history.
+  async getArticleRevisions(title: string, limit = 3000): Promise<RevisionChange[]> {
     let allChanges: RevisionChange[] = [];
     let continueToken: string | undefined = undefined;
     let fetchedCount = 0;
 
-    // We fetch a maximum of "limit" revisions to balance performance
+    // Fetch newest to oldest to ensure we get the current state
     while (fetchedCount < limit) {
       const params: Record<string, string> = {
         action: 'query',
         prop: 'revisions',
         titles: title,
         rvprop: 'ids|timestamp|user|comment|content',
-        rvlimit: 'max', // max is usually 50 for content
+        rvlimit: 'max', 
       };
       if (continueToken) params.rvcontinue = continueToken;
 
@@ -72,20 +71,22 @@ export const wikipediaService = {
       const pageId = Object.keys(data.query.pages)[0];
       const page = data.query.pages[pageId];
       
-      if (!page.revisions) break;
+      if (!page || !page.revisions) break;
 
       for (const rev of page.revisions) {
         const wikitext = rev['*'] || '';
         const imageName = this.extractInfoboxImage(wikitext);
         
-        // We only care about revisions where an image was found
         if (imageName) {
+          const comment = rev.comment || '';
           allChanges.push({
             revid: rev.revid,
             timestamp: rev.timestamp,
             user: rev.user,
-            comment: rev.comment || '',
+            comment: comment,
             imageName: imageName,
+            isRevert: comment.toLowerCase().includes('revert') || comment.toLowerCase().includes('rvv') || comment.includes('m-'),
+            isUndo: comment.startsWith('Undid revision'),
           });
         }
       }
@@ -95,18 +96,19 @@ export const wikipediaService = {
       if (!continueToken) break;
     }
 
-    // Now filter only for when the image name actually changed relative to the previous revision in history
-    // (Wikipedia history is returned newest first by default)
+    // Filter for significant changes
     const significantChanges: RevisionChange[] = [];
-    let currentImage = '';
+    let lastNormalizedName = '';
     
-    // Reverse to process chronologically
+    // Process chronologically (oldest to newest) to detect changes
+    // even though we fetched newest first
     const chronological = [...allChanges].reverse();
     
     for (const change of chronological) {
-      if (change.imageName !== currentImage) {
+      const normalized = change.imageName.trim().toLowerCase().replace(/[\s_]+/g, '_');
+      if (normalized !== lastNormalizedName) {
         significantChanges.push(change);
-        currentImage = change.imageName;
+        lastNormalizedName = normalized;
       }
     }
 
@@ -114,28 +116,42 @@ export const wikipediaService = {
   },
 
   extractInfoboxImage(wikitext: string): string | null {
-    // Look for common image parameters in Infobox templates
-    // Standard formats: | image = Example.jpg or |image=Example.jpg
-    // Also handles [[File:Example.jpg|thumb|...]]
+    if (!wikitext) return null;
     
+    // 0. Preliminary cleanup: strip comments to avoid capturing them in parameters
+    const cleanText = wikitext.replace(/<!--[\s\S]*?-->/g, '');
+
     // 1. Check for infobox image parameter
-    const imageParamRegex = /\|\s*(?:image|photo|main_image|image_name)\s*=\s*([^|\n}]+)/i;
-    const match = wikitext.match(imageParamRegex);
+    // Handles aliases like image, photo, font_image, etc.
+    // Handles parameters like |image1, |image_skyline, etc.
+    const imageParamRegex = /\|\s*(?:image|photo|main_image|image_name|image_skyline|landscape|image1|image2)\s*=\s*([^|\n}]+)/i;
+    const match = cleanText.match(imageParamRegex);
+    
     if (match && match[1]) {
       let name = match[1].trim();
+      
+      // If it starts with {{ and ends with }} it might be a template, but check if it's an image template
+      // If it contains more templates inside, it's likely complex.
+      if (!name || name.length < 3) return null;
+
       // Remove [[File: prefix if present in the value
-      name = name.replace(/^\[\[(?:File|Image):/i, '').replace(/\]\]$/, '');
-      // Strip other parameters if it's like Example.jpg|thumb
+      name = name.replace(/^\[\[(?:File|Image|Media):/i, '').replace(/\]\]$/, '');
+      
+      // Strip other parameters if it's like Example.jpg|thumb|center
       name = name.split('|')[0].trim();
-      return name || null;
+      
+      // Basic validation: must NOT be just a template call like {{center|...}} unless the filename is inside
+      if (name.includes('{{')) return null;
+      
+      return name;
     }
 
     // 2. Fallback: looking for any File/Image link at the top of the article
-    // This is less reliable for "infobox" but helps catch articles without standard templates
-    const fileLinkRegex = /\[\[(?:File|Image):([^|\]]+)/i;
-    const fileMatch = wikitext.substr(0, 2000).match(fileLinkRegex);
+    const fileLinkRegex = /\[\[(?:File|Image|Media):([^|\]\n#]+)/i;
+    const fileMatch = cleanText.substring(0, 4000).match(fileLinkRegex);
     if (fileMatch && fileMatch[1]) {
-      return fileMatch[1].trim();
+      const name = fileMatch[1].trim();
+      if (name.length > 3) return name;
     }
 
     return null;

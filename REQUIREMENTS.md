@@ -7,43 +7,51 @@ An application that analyzes the revision history of a Wikipedia article to iden
 
 ### 1. Article Search & Discovery
 - Users can search for a Wikipedia article by title.
-- Support for multiple languages (defaulting to English).
-- Auto-complete or search results listing to ensure accurate selection.
+- Support for selecting accurate matches from search results.
 
 ### 2. Historical Revision Analysis
-- Fetch revision history for a selected article.
-- Parse the wikitext of each revision to extract the `image` or `file` parameter from the primary template (e.g., `Infobox person`, `Infobox athlete`, etc.).
-- Identify specific revisions where the image filename changed.
-- **Performance Strategy**: Since articles can have thousands of revisions, implement a sampling or bisection algorithm to find changes efficiently without fetching every single revision's content.
+- Fetch revision history for a selected article (up to 3000 revisions).
+- Parse the wikitext of each revision to extract image parameters from templates (e.g., `Infobox person`, `landscape`, `photo`, `image1`).
+- Normalize and deduplicate image filenames to identify "image eras".
+- **Extraction Strategy**: Handle common aliases and cleaning steps (like removing HTML comments and template-nesting artifacts) to ensure accuracy.
 
-### 3. Visual Timeline
-- Display a horizontal or vertical timeline of "image eras."
-- Each entry in the timeline should show:
-    - A thumbnail of the image.
-    - The date it was added.
-    - The username of the editor who added it.
-    - The revision comment/edit summary.
-    - Total duration the image served as the main headshot.
-- Interactive elements to view the full resolution image or jump to that specific Wikipedia revision.
+### 3. Visual Linear Timeline
+- Display a horizontal, time-accurate linear timeline.
+- Proportional spacing between entries based on actual calendar days.
+- **Interactivity**: 
+    - **Zoom**: Scalable view (20% - 500%) to handle both short-term and multi-decade histories.
+    - **Minimap Overview**: A navigational "scrubber" at the bottom to jump to specific points in time.
+    - **Scroll Control**: Persistent custom **horizontal and vertical** scrollbars visible at all times.
+    - **Auto-fitting**: Intelligently fits the timeline to the screen on initial load.
+- Each entry displays:
+    - High-res thumbnail via Wikimedia Commons.
+    - Introduction date and editor attribution.
+    - Edit summary/comment.
+    - **Status Badges**: Specialized color-coding for "Reverts" (Red) and "Undos" (Orange).
+- **Current State Sidebar**: A persistent right-side panel showing the active infobox image and its duration history (e.g., "Active for 400 days").
 
 ### 4. Technical Stack
 - **Framework**: React 18+ with Vite.
-- **Styling**: Tailwind CSS for a refined "Technical Dashboard" aesthetic.
+- **Styling**: Tailwind CSS for a refined "Historical Archive" aesthetic.
+- **Persistent Scrollbars**: Custom CSS layer for universal visibility across browsers.
 - **Icons**: Lucide-React.
-- **Animations**: Framer Motion for smooth timeline transitions.
-- **API**: MediaWiki API (via JSONP or CORS with `origin=*`).
+- **Animations**: Framer Motion for zoom transitions and UI entrances.
+- **API**: MediaWiki API.
 
 ## API Endpoints & Logic
 - `action=query&list=search`: Search for articles.
-- `action=query&prop=revisions&rvprop=content|timestamp|user|ids`: Fetch revision content.
-- `action=query&prop=imageinfo&iiprop=url|thumbmsize`: Get image thumbnails and metadata.
+- `action=query&prop=revisions&rvprop=ids|timestamp|user|comment|content`: Fetch revision history and wikitext.
+- `action=query&prop=imageinfo&iiprop=url|thumbmsize`: Resolve Commons metadata.
 
 ## UX/UI Design Goals
-- **Mood**: Precise, historical, scholarly.
-- **Typography**: Inter for UI, matching the Wikipedia aesthetic but with more modern spacing.
-- **Interactivity**: Staggered animation of the timeline as data loads.
+- **Mood**: Scholarly, precise, data-driven.
+- **Density**: Use horizontal space efficiently; stack items that would overlap in time at high zoom levels.
+- **Clarity**: Subtle year markers and Present Day indicators to provide temporal context.
 
-## Future Considerations
-- Compare two specific versions side-by-side.
-- Export timeline as an image or PDF.
-- Analyze multiple languages to see how headshots differ across cultures (e.g., the Japanese Wikipedia vs. English Wikipedia for the same person).
+## Completed Enhancements
+- [x] Zoom in/out functionality.
+- [x] Navigation minimap/overview.
+- [x] Live search with auto-suggest.
+- [x] Time-accurate linear scaling.
+- [x] "Active since" duration counter.
+- [x] Robust handling of common Infobox image parameter aliases.
