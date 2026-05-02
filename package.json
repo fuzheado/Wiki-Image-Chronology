@@ -30,5 +30,11 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "@types/express": "^4.17.21"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -p 8080 -H 0.0.0.0",
+    "lint": "next lint"
   }
 }
