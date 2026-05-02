@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "start": "vite preview --port 8080 --host 0.0.0.0"
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -31,11 +32,5 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "@types/express": "^4.17.21"
-  },
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start -p 8080 -H 0.0.0.0",
-    "lint": "next lint"
   }
 }
