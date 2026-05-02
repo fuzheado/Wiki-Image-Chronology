@@ -11,7 +11,7 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
 - **Dynamic Search**: Search for any Wikipedia article title across the English Wikipedia database.
 - **Batch Retrieval Pipeline**: 
     - **Phase 1 (The Sweep)**: Fetches revision history in batches of 50 with full wikitext for efficient scanning.
-    - **Phase 2 (The Matcher)**: Extracts raw image parameters from Infobox templates using pre-cleaned wikitext filters.
+    - **Phase 2 (The Matcher)**: Extracts raw image parameters (e.g., `image`, `photo`, `portrait`, `infobox_image`) from Infobox templates using pre-cleaned wikitext filters.
     - **Phase 3 (The Filter)**: Identifies candidate changes by comparing parameter strings between revisions.
     - **Phase 4 (The Clean-up)**: Targeted use of the Wikipedia `action=parse` API specifically for complex templates (like `{{P18|...}}`) to resolve final rendered images.
     - **Wikidata "Ghost" Detection**: Synchronously tracks `P18` property changes on Wikidata to capture updates that don't trigger Wikipedia edits.
@@ -20,9 +20,15 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
     - Color-coded entries: Red (Reverts), Orange (Undos), Purple (Wikidata).
 - **Zoom & Navigation**: 
     - Zoom (20% to 500%) with a navigational minimap.
-- **Real-Time Progress Metrics**: Detailed visual feedback during the analysis pipeline (Sweeping → Wikidata) with per-phase progress bars.
+- **Refresh & Navigation**: 
+    - **Refresh History**: Instantly reset and refetch the latest data for any article.
+    - **Load More Revisions**: Extend the analysis by fetching deeper into the edit history in blocks of 500.
+- **Deep Links & Integration**:
+    - **Direct Access**: Click article titles to visit Wikipedia or click images to jump to the record on Wikimedia Commons.
+- **Real-Time Progress Metrics**: Detailed visual feedback during the analysis pipeline (Sweeping → Wikidata) with per-phase progress bars and revision counters.
 - **Data-Rich Display**:
     - High-quality thumbnails, "Active Since" day-counters, and revision diffs.
+    - Comprehensive metadata: Shows total image variations relative to the volume of revisions processed.
 - **Professional Analytics UI**: A high-fidelity "technical dashboard" aesthetic with a dedicated space for the "Current Infobox Image".
 
 ## 🛠️ Tech Stack

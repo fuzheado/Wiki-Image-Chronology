@@ -10,6 +10,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState<{ phase: string; count: number; total?: number } | null>(null);
   const [history, setHistory] = useState<ImageHistoryEntry[]>([]);
+  const [continueToken, setContinueToken] = useState<string | undefined>(undefined);
+  const [totalRevisionsProcessed, setTotalRevisionsProcessed] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const sortedHistory = useMemo(() => {
     return [...history].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [history]);
@@ -102,10 +105,15 @@ export default function App() {
     setProgress({ phase: 'Initializing', count: 0 });
     setError(null);
     setHistory([]);
+    setContinueToken(undefined);
+    setTotalRevisionsProcessed(0);
 
     try {
       // 1. Get significant revisions where images changed
-      const changes = await wikipediaService.getArticleRevisions(page.title, 500, setProgress);
+      const result = await wikipediaService.getArticleRevisions(page.title, 500, setProgress);
+      const changes = result.events;
+      setContinueToken(result.continueToken);
+      setTotalRevisionsProcessed(result.totalFetched);
       
       if (changes.length === 0) {
         setError("No infobox images found in the history of this article.");
@@ -135,6 +143,64 @@ export default function App() {
       console.error(err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshHistory = () => {
+    if (selectedPage) {
+      loadHistory(selectedPage);
+    }
+  };
+
+  const loadMoreRevisions = async () => {
+    if (!selectedPage || !continueToken || isLoadingMore) return;
+    
+    setIsLoadingMore(true);
+    // Keep a copy of current names to avoid duplicate metadata fetches
+    const existingNames = new Set(history.map(h => h.imageName));
+    
+    try {
+      setProgress({ phase: 'Synchronizing History', count: 0, total: 500 });
+      const result = await wikipediaService.getArticleRevisions(
+        selectedPage.title, 
+        500, 
+        setProgress, 
+        continueToken
+      );
+      
+      const newChanges = result.events;
+      setContinueToken(result.continueToken);
+      setTotalRevisionsProcessed(prev => prev + result.totalFetched);
+      
+      if (newChanges.length > 0) {
+        // Resolve metadata only for names we don't have yet
+        const newNames = Array.from(new Set(newChanges.map(c => c.imageName).filter(name => !existingNames.has(name))));
+        const newImageDetails = await wikipediaService.getImageDetails(newNames);
+        
+        const enrichedNewHistory: ImageHistoryEntry[] = newChanges.map(change => {
+          const details = newImageDetails.get(change.imageName);
+          const existingEntry = history.find(h => h.imageName === change.imageName);
+          
+          return {
+            ...change,
+            thumbnailUrl: details?.thumb || existingEntry?.thumbnailUrl || '',
+            originalUrl: details?.original || existingEntry?.originalUrl || '',
+          };
+        }).filter(h => h.thumbnailUrl);
+
+        setHistory(prev => {
+          const combined = [...prev, ...enrichedNewHistory];
+          // Final dedup by revid to be safe
+          const uniqueMap = new Map();
+          combined.forEach(item => uniqueMap.set(item.revid, item));
+          return Array.from(uniqueMap.values());
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load more history", err);
+    } finally {
+      setIsLoadingMore(false);
+      setProgress(null);
     }
   };
 
@@ -231,7 +297,7 @@ export default function App() {
             </div>
           )}
 
-          {isLoading && (
+          { (isLoading || isLoadingMore) && (
             <div className="flex flex-col items-center justify-center h-full space-y-8">
               <div className="relative">
                 <div className="w-20 h-20 border-4 border-slate-100 rounded-full" />
@@ -289,16 +355,43 @@ export default function App() {
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* Timeline Header */}
               <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/50 backdrop-blur-sm z-10">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 leading-tight tracking-tight">{selectedPage.title}</h2>
+                <div className="flex flex-col">
+                  <a 
+                    href={`https://en.wikipedia.org/wiki/${encodeURIComponent(selectedPage.title)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-2xl font-bold text-slate-900 leading-tight tracking-tight hover:text-blue-600 transition-colors flex items-center gap-2 group/title"
+                  >
+                    {selectedPage.title}
+                    <ExternalLink className="w-4 h-4 opacity-0 group-hover/title:opacity-100 transition-opacity" />
+                  </a>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    Timeline of {history.length} image variations 
+                    Timeline of {history.length} image variations across {totalRevisionsProcessed} revisions
                     <span className="ml-2 px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold text-slate-400">
-                      {new Date(sortedHistory[0].timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })} — Present
+                      {new Date(sortedHistory[0]?.timestamp || new Date()).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })} — Present
                     </span>
                   </p>
                 </div>
                 <div className="flex gap-3 items-center">
+                  <button
+                    onClick={refreshHistory}
+                    disabled={isLoading || isLoadingMore}
+                    className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg text-xs font-bold uppercase transition-all disabled:opacity-50"
+                    title="Refresh and analyze from latest"
+                  >
+                    <Loader2 className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                  {continueToken && (
+                    <button
+                      onClick={loadMoreRevisions}
+                      disabled={isLoadingMore}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-100 text-blue-600 rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95"
+                    >
+                      {isLoadingMore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <History className="w-3.5 h-3.5" />}
+                      Load Older Revisions
+                    </button>
+                  )}
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 mr-4">
                     <button 
                       onClick={() => setZoomLevel(Math.max(0.2, zoomLevel - 0.2))}
@@ -355,31 +448,39 @@ export default function App() {
 
         {selectedPage && !isLoading && history.length > 0 && (
           <aside className="w-72 hidden lg:flex flex-col gap-6 overflow-y-auto animate-in slide-in-from-right duration-500">
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">Current Infobox Image</h2>
-              <div className="aspect-[3/4] bg-slate-100 rounded-lg border border-slate-200 overflow-hidden mb-4 shadow-inner">
-                {history[history.length - 1] && (
-                  <img 
-                    src={history[history.length - 1].thumbnailUrl} 
-                    alt="Current" 
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                )}
-              </div>
-              <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">Current Infobox Image</h2>
+                <a 
+                  href={`https://commons.wikimedia.org/wiki/File:${encodeURIComponent(sortedHistory[sortedHistory.length - 1]?.imageName || '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block aspect-[3/4] bg-slate-100 rounded-lg border border-slate-200 overflow-hidden mb-4 shadow-inner group/curr relative"
+                >
+                  {sortedHistory[sortedHistory.length - 1] && (
+                    <img 
+                      src={sortedHistory[sortedHistory.length - 1].thumbnailUrl} 
+                      alt="Current" 
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover/curr:scale-110"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-black/0 group-hover/curr:bg-black/10 transition-colors flex items-center justify-center">
+                    <Maximize2 className="w-8 h-8 text-white opacity-0 group-hover/curr:opacity-100 transition-opacity" />
+                  </div>
+                </a>
+                <div className="space-y-4">
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-mono tracking-tighter">File Name</p>
-                  <p className="text-sm font-medium truncate" title={history[history.length - 1]?.imageName}>{history[history.length - 1]?.imageName}</p>
+                  <p className="text-sm font-medium truncate" title={sortedHistory[sortedHistory.length - 1]?.imageName}>{sortedHistory[sortedHistory.length - 1]?.imageName}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-mono tracking-tighter">Active Since</p>
                   <p className="text-sm font-medium">
-                    {history[history.length - 1] ? (
+                    {sortedHistory[sortedHistory.length - 1] ? (
                       <>
-                        {new Date(history[history.length - 1].timestamp).toLocaleDateString()}
+                        {new Date(sortedHistory[sortedHistory.length - 1].timestamp).toLocaleDateString()}
                         <span className="ml-2 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                          {Math.max(0, Math.floor((new Date().getTime() - new Date(history[history.length - 1].timestamp).getTime()) / (1000 * 60 * 60 * 24)))} days
+                          {Math.max(0, Math.floor((new Date().getTime() - new Date(sortedHistory[sortedHistory.length - 1].timestamp).getTime()) / (1000 * 60 * 60 * 24)))} days
                         </span>
                       </>
                     ) : 'N/A'}
@@ -559,13 +660,19 @@ function TimelineCard({ entry, stackIndex }: TimelineCardProps) {
       className={`relative bg-white p-2 rounded-xl border-2 transition-all hover:scale-105 z-[1] hover:z-20 shadow-xl shadow-black/5 group w-48 shrink-0
         ${isUndo ? 'border-orange-200' : isRevert ? 'border-red-200' : 'border-slate-100'}`}
     >
-      <div className="aspect-[3/4] rounded-lg overflow-hidden mb-2 bg-slate-50 relative border border-slate-100 shadow-sm">
+      <a 
+        href={`https://commons.wikimedia.org/wiki/File:${encodeURIComponent(entry.imageName)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block aspect-[3/4] rounded-lg overflow-hidden mb-2 bg-slate-50 relative border border-slate-100 shadow-sm group/cardimg"
+      >
         <img 
           src={entry.thumbnailUrl} 
           alt="Revision" 
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover/cardimg:scale-110"
           referrerPolicy="no-referrer"
         />
+        <div className="absolute inset-0 bg-black/0 group-hover/cardimg:bg-black/5 transition-colors" />
         <div className="absolute top-2 left-2 flex flex-col gap-1">
           {entry.source === 'Wikidata' && (
             <div className="bg-purple-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-lg flex items-center gap-1 ring-2 ring-white">
@@ -582,7 +689,7 @@ function TimelineCard({ entry, stackIndex }: TimelineCardProps) {
             <History className="w-3 h-3" /> REVERT
           </div>
         ) : null}
-      </div>
+      </a>
 
       <div className="space-y-2 px-1">
         <div className="flex justify-between items-start">

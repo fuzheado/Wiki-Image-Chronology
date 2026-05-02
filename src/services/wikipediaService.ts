@@ -81,19 +81,22 @@ export const wikipediaService = {
   async getArticleRevisions(
     title: string, 
     limit = 500,
-    onProgress?: (progress: { phase: string; count: number; total?: number }) => void
-  ): Promise<RevisionChange[]> {
+    onProgress?: (progress: { phase: string; count: number; total?: number }) => void,
+    startToken?: string
+  ): Promise<{ events: RevisionChange[]; continueToken?: string; totalFetched: number }> {
     let candidateEvents: RevisionChange[] = [];
-    let continueToken: string | undefined = undefined;
+    let continueToken: string | undefined = startToken;
     let fetchedCount = 0;
     let qid: string | null = null;
     
     // For batch-to-batch comparison
-    let lastRevisionWikitext: string | null = null;
+    let lastProcessedRevRaw: string | null = null;
 
     onProgress?.({ phase: 'Synchronizing History', count: 0, total: limit });
     
     // Phase 1 (The Sweep): Fetch revision history in batches of 50 with content
+    let lastRevisionInBatch: any = null;
+
     while (fetchedCount < limit) {
       const params: Record<string, string> = {
         action: 'query',
@@ -115,70 +118,35 @@ export const wikipediaService = {
       if (!page.revisions) break;
 
       const revisions = page.revisions;
+
+      // Handle the gap between the last batch and this one
+      if (lastRevisionInBatch) {
+        const newerRaw = this.extractRawImageParam(lastRevisionInBatch['*'] || '');
+        const olderRaw = this.extractRawImageParam(revisions[0]['*'] || '');
+        if (newerRaw !== olderRaw) {
+          await this.processCandidate(lastRevisionInBatch, newerRaw, olderRaw, candidateEvents);
+        }
+      }
+      
       for (let i = 0; i < revisions.length; i++) {
         const currentRev = revisions[i];
-        // The revision chronologically before this one is i+1 in the array (older)
-        const olderRev = revisions[i + 1]; 
+        const nextOlderRev = revisions[i + 1]; 
         
-        const currentText = currentRev['*'] || '';
-        const olderText = olderRev ? (olderRev['*'] || '') : lastRevisionWikitext;
-
-        // Phase 2 (The Matcher): Extract the string following the image parameter
-        const currentRaw = this.extractRawImageParam(currentText);
-        const olderRaw = olderText ? this.extractRawImageParam(olderText) : null;
-
-        // Phase 3 (The Filter): Compare strings. 
-        // We always record the very first (newest) revision as the "current" state.
-        const isInitial = fetchedCount === 0 && i === 0;
+        const isInitial = !startToken && fetchedCount === 0 && i === 0;
+        const currentRaw = this.extractRawImageParam(currentRev['*'] || '');
         
-        if (isInitial || (olderRaw !== null && currentRaw !== olderRaw)) {
-          // If the string is different, mark it as a "Candidate Change"
-          
-          // Phase 4 (The Clean-up): Handle templates (e.g., {{P18|...}})
-          let resolvedImage = '';
-          const isTemplate = currentRaw && (currentRaw.includes('{{') || currentRaw.includes('}}'));
-
-          if (isTemplate) {
-            // Trigger a single action=parse call to resolve the template
-            resolvedImage = await parseQueue.run(async () => {
-              try {
-                const parseData = await fetchWiki({
-                  action: 'parse',
-                  oldid: currentRev.revid.toString(),
-                  prop: 'images'
-                });
-                // Lead image heuristic
-                return parseData.parse?.images?.find((img: string) => 
-                  !/Ambox|Commons-logo|Edit-clear|Question_mark|Gnome-/.test(img) &&
-                  /\.(jpg|jpeg|png|svg|webp|gif)$/i.test(img)
-                ) || '';
-              } catch {
-                return '';
-              }
-            });
-          } else {
-            // Literal image name or empty
-            resolvedImage = currentRaw ? currentRaw.replace(/^\[\[(?:File|Image|Media):/i, '').split('|')[0].replace(/\]\]$/, '').trim() : '';
-          }
-
-          if (resolvedImage) {
-            candidateEvents.push({
-              revid: currentRev.revid,
-              timestamp: currentRev.timestamp,
-              user: currentRev.user,
-              comment: currentRev.comment || '',
-              imageName: resolvedImage,
-              isRevert: /revert|rvv|m-|undo/i.test(currentRev.comment || ''),
-              isUndo: (currentRev.comment || '').startsWith('Undid revision'),
-              source: 'Wikipedia',
-              sizeDiff: olderRev ? Math.abs(currentRev.size - olderRev.size) : 0
-            });
+        if (isInitial) {
+          const olderRaw = nextOlderRev ? this.extractRawImageParam(nextOlderRev['*'] || '') : null;
+          await this.processCandidate(currentRev, currentRaw, olderRaw, candidateEvents);
+        } else if (nextOlderRev) {
+          const olderRaw = this.extractRawImageParam(nextOlderRev['*'] || '');
+          if (currentRaw !== olderRaw) {
+            await this.processCandidate(currentRev, currentRaw, olderRaw, candidateEvents);
           }
         }
       }
 
-      // If we have more batches, we'll need the oldest rev of this batch to compare with the newest of next
-      lastRevisionWikitext = revisions[revisions.length - 1]['*'] || '';
+      lastRevisionInBatch = revisions[revisions.length - 1];
       
       fetchedCount += revisions.length;
       onProgress?.({ phase: 'Sweeping Revisions', count: fetchedCount, total: limit });
@@ -187,9 +155,9 @@ export const wikipediaService = {
       if (!continueToken) break;
     }
 
-    // Phase 3: Wikidata "Ghost" Check
+    // Phase 3: Wikidata "Ghost" Check (Only on initial load)
     let wikidataEvents: RevisionChange[] = [];
-    if (qid) {
+    if (qid && !startToken) {
       onProgress?.({ phase: 'Checking Wikidata', count: 0, total: 1 });
       wikidataEvents = await this.getWikidataHistory(qid);
       onProgress?.({ phase: 'Checking Wikidata', count: 1, total: 1 });
@@ -212,7 +180,11 @@ export const wikipediaService = {
       }
     }
 
-    return finalEvents;
+    return {
+      events: finalEvents,
+      continueToken: continueToken,
+      totalFetched: fetchedCount
+    };
   },
 
   async getWikidataHistory(qid: string): Promise<RevisionChange[]> {
@@ -271,10 +243,58 @@ export const wikipediaService = {
     }
   },
 
+  async processCandidate(rev: any, currentRaw: string | null, olderRaw: string | null, events: RevisionChange[]) {
+    // Phase 4 (The Clean-up): Handle templates (e.g., {{P18|...}})
+    let resolvedImage = '';
+    const isTemplate = currentRaw && (currentRaw.includes('{{') || currentRaw.includes('}}'));
+
+    if (isTemplate) {
+      resolvedImage = await parseQueue.run(async () => {
+        try {
+          const parseData = await fetchWiki({
+            action: 'parse',
+            oldid: rev.revid.toString(),
+            prop: 'images'
+          });
+          return parseData.parse?.images?.find((img: string) => 
+            !/Ambox|Commons-logo|Edit-clear|Question_mark|Gnome-/.test(img) &&
+            /\.(jpg|jpeg|png|svg|webp|gif)$/i.test(img) &&
+            !/Stub|Icon|Logo_of_Wikipedia/i.test(img)
+          ) || '';
+        } catch { return ''; }
+      });
+    } else {
+      // Better resolution for [[File:Name.jpg|thumb]] or just Name.jpg
+      resolvedImage = currentRaw ? currentRaw.trim() : '';
+      if (resolvedImage) {
+        // Remove [[ and ]] if they wrap the whole thing or part of it
+        resolvedImage = resolvedImage.replace(/^\[\[/, '').replace(/\]\]$/, '');
+        // Split by | to handle [[File:Img.jpg|thumb]]
+        resolvedImage = resolvedImage.split('|')[0].trim();
+        // Remove File: prefix
+        resolvedImage = resolvedImage.replace(/^(?:File|Image|Media):/i, '').trim();
+      }
+    }
+
+    if (resolvedImage) {
+      events.push({
+        revid: rev.revid,
+        timestamp: rev.timestamp,
+        user: rev.user,
+        comment: rev.comment || '',
+        imageName: resolvedImage,
+        isRevert: /revert|rvv|m-|undo/i.test(rev.comment || ''),
+        isUndo: (rev.comment || '').startsWith('Undid revision'),
+        source: 'Wikipedia',
+        sizeDiff: 0 // Approximate or calculated elsewhere
+      });
+    }
+  },
+
   extractRawImageParam(wikitext: string): string | null {
     if (!wikitext) return null;
     const cleanText = wikitext.replace(/<!--[\s\S]*?-->/g, '');
-    const imageParamRegex = /\|\s*(?:image|photo|main_image|image_name|image_skyline|landscape|image1|image2)\s*=\s*([^|\n}]+)/i;
+    const imageParamRegex = /\|\s*(?:image|photo|portrait|main_image|infobox_image|image_name|image_file|image_skyline|landscape|image1|image2)\s*=\s*([^|\n}]+)/i;
     const match = cleanText.match(imageParamRegex);
     return match ? match[1].trim() : null;
   },
@@ -288,7 +308,7 @@ export const wikipediaService = {
     // 1. Check for infobox image parameter
     // Handles aliases like image, photo, font_image, etc.
     // Handles parameters like |image1, |image_skyline, etc.
-    const imageParamRegex = /\|\s*(?:image|photo|main_image|image_name|image_skyline|landscape|image1|image2)\s*=\s*([^|\n}]+)/i;
+    const imageParamRegex = /\|\s*(?:image|photo|portrait|main_image|infobox_image|image_name|image_file|image_skyline|landscape|image1|image2)\s*=\s*([^|\n}]+)/i;
     const match = cleanText.match(imageParamRegex);
     
     if (match && match[1]) {

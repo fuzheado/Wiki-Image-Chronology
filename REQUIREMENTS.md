@@ -10,16 +10,22 @@ An application that analyzes the revision history of a Wikipedia article to iden
 - Support for selecting accurate matches from search results.
 
 ### 2. Historical Revision Analysis (Batch Retrieval Pipeline)
-- **Phase 1 (The Sweep)**: Fetch revision history (up to 500 revisions) in batches of 50 with `rvprop=content`.
-- **Phase 2 (The Matcher)**: For each revision, extract the string following the image parameter in the Infobox.
+- **Batch Retrieval Pipeline**: 
+    - **Phase 1 (The Sweep)**: Fetch revision history (initial 500 revisions) in batches of 50 with `rvprop=content`.
+    - **Pagination**: Support fetching additional 500-revision blocks via a "Load More" interface with persistent cross-batch state synchronization.
+    - **Refresh**: One-click reload to clear history and fetch the absolute latest revision.
+- **Phase 2 (The Matcher)**: For each revision, extract the string following the image parameter (e.g., `image`, `photo`, `portrait`, `infobox_image`, `image_file`) in the Infobox.
 - **Phase 3 (The Filter)**: Compare the extracted string from Revision $N$ to Revision $N-1$ to identify "Candidate Changes."
 - **Phase 4 (The Clean-up)**: If a candidate change involves a template (e.g., `{{P18|...}}`), trigger a single `action=parse` call to resolve the actual rendered image.
 - **Wikidata "Ghost" Check**: Synchronize with Wikidata's `P18` (image) property history to detect image updates that occur via Wikidata rather than direct wikitext edits.
 - **Deduplication**: Automatically collapse revisions that result in the same rendered image into a single chronological "era."
+- **Statistics**: Display total number of image variations identified relative to the total number of revisions processed.
 
 ### 3. Visual Linear Timeline
 - Display a horizontal, time-accurate linear timeline with proportional spacing.
-- **Interactivity**: 
+- **Interactive Navigation**: 
+    - **Wikipedia Link**: Article title links directly to the English Wikipedia page.
+    - **Commons Link**: All images (Main Sidebar and Timeline Tiles) link to their respective pages on Wikimedia Commons.
     - **Zoom**: Scalable view (20% - 500%).
     - **Minimap Overview**: A navigational "scrubber" for rapid temporal navigation.
     - **Scroll Control**: Persistent custom **horizontal and vertical** scrollbars.
