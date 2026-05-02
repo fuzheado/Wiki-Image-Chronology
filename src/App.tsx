@@ -213,7 +213,7 @@ export default function App() {
             W
           </div>
           <h1 className="text-xl font-semibold tracking-tight hidden sm:block">
-            WikiVision <span className="text-slate-400 font-normal">| Image Chronology</span>
+            Infobox Image History
           </h1>
         </div>
 
@@ -278,7 +278,7 @@ export default function App() {
                 <History className="w-10 h-10 text-blue-600" />
               </div>
               <div className="space-y-3">
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Historical Perspective</h2>
+                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Infobox Image History</h2>
                 <p className="text-slate-500 max-w-sm mx-auto text-lg leading-relaxed">
                   Enter a Wikipedia article title above to visualize the visual evolution of its primary infobox image.
                 </p>
