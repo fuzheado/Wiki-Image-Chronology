@@ -1,4 +1,4 @@
-# Wiki Image Chronos (WikiVision)
+# Infobox Image History
 
 Analyze and visualize the visual evolution of Wikipedia article infobox images over time.
 
