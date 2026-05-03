@@ -6,7 +6,9 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
 
 **Wiki Image Chronos** is a historical analysis tool that digs into the revision history of Wikipedia articles to identify when the primary biographical or identifying image in the "infobox" was changed. It provides a time-accurate, linear timeline of these "image eras," to see how the public face of an article has changed over its lifetime.
 
+<kbd>
 <img src="iih-screenshot.png" width="80%">
+</kbd>
 
 ## ✨ Features
 
