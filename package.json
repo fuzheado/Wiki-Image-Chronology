@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "./node_modules/.bin/vite build",
-    "start": "npm run build && ./node_modules/.bin/vite preview --port 8080 --host 0.0.0.0",
+    "start": "npm install && npm run build && node server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
