@@ -37,6 +37,7 @@ Analyze and visualize the visual evolution of Wikipedia article infobox images o
 
 ## 🛠️ Tech Stack
 
+- **AI prototyping**: Google AI Studio
 - **Framework**: React 18+ with TypeScript
 - **Bundler**: Vite
 - **Styling**: Tailwind CSS 4.0
