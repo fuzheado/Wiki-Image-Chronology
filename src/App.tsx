@@ -284,7 +284,7 @@ export default function App() {
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2 pt-4">
-                {['Alysa Liu', 'Ronan Farrow', 'Angela Merkel'].map(term => (
+                {['Alysa Liu', 'Fernando Mendoza', 'Angela Merkel'].map(term => (
                   <button
                     key={term}
                     onClick={() => setQuery(term)}
